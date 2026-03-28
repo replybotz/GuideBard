@@ -1,0 +1,38 @@
+version: "3.9"
+
+# Development overrides — mount source code for hot reload
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  frontend:
+    build:
+      target: development
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+
+  backend:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"   # Direct access in dev
+    environment:
+      - DEBUG=true
+
+  worker:
+    command: celery -A app.workers.celery_app worker --loglevel=debug -Q default,video,ai -c 2
+    volumes:
+      - ./backend:/app
+
+  postgres:
+    ports:
+      - "5432:5432"   # Direct DB access in dev
+
+  redis:
+    ports:
+      - "6379:6379"   # Direct Redis access in dev
