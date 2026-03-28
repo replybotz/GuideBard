@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1 import auth, projects, recordings, guides, videos, ai, voice, publish, settings
+from app.api.v1 import auth, projects, recordings, guides, videos, ai, voice, publish, settings, storage
 
 v1_router = APIRouter(prefix="/api/v1")
 v1_router.include_router(auth.router)
@@ -11,3 +11,4 @@ v1_router.include_router(ai.router)
 v1_router.include_router(voice.router)
 v1_router.include_router(publish.router)
 v1_router.include_router(settings.router)
+v1_router.include_router(storage.router)

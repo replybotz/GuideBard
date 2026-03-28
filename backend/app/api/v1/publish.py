@@ -1,16 +1,21 @@
 """Publishing targets and jobs: YouTube, WordPress."""
+import json
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 
+from app.config import settings as app_settings
 from app.dependencies import get_current_user, get_tenant_session
 from app.models.publish_target import PublishTarget
 from app.models.publish_job import PublishJob
+from app.utils.encryption import encrypt, decrypt
 
 router = APIRouter(prefix="/publish", tags=["publish"])
+
+YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
 
 class PublishTargetCreate(BaseModel):
@@ -224,3 +229,137 @@ async def get_publish_job(
     if not job or job.tenant_id != tenant.id:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_resp(job)
+
+
+# ── YouTube OAuth Flow ─────────────────────────────────────────────────────
+
+
+class YouTubeOAuthStartRequest(BaseModel):
+    client_id: str
+    client_secret: str
+    channel_name: str = "My YouTube Channel"
+
+
+@router.post("/youtube/oauth/start")
+async def youtube_oauth_start(
+    body: YouTubeOAuthStartRequest,
+    auth=Depends(get_current_user),
+):
+    """Return the Google OAuth authorization URL for the user to visit."""
+    from google_auth_oauthlib.flow import Flow  # type: ignore
+
+    user, tenant = auth
+    redirect_uri = f"{app_settings.app_url}/api/v1/publish/youtube/oauth/callback"
+
+    # Encode state: tenant_id|user_id|encrypted(client_secret)|channel_name
+    state_payload = {
+        "tenant_id": str(tenant.id),
+        "user_id": str(user.id),
+        "client_id": body.client_id,
+        "client_secret_enc": encrypt(body.client_secret),
+        "channel_name": body.channel_name,
+    }
+    state = encrypt(json.dumps(state_payload))
+
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": body.client_id,
+                "client_secret": body.client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [redirect_uri],
+            }
+        },
+        scopes=YOUTUBE_SCOPES,
+    )
+    flow.redirect_uri = redirect_uri
+    auth_url, _ = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+        state=state,
+    )
+    return {"auth_url": auth_url}
+
+
+@router.get("/youtube/oauth/callback")
+async def youtube_oauth_callback(
+    request: Request,
+    code: str = Query(...),
+    state: str = Query(...),
+):
+    """Handle the Google OAuth redirect, exchange code for tokens, save target."""
+    from google_auth_oauthlib.flow import Flow  # type: ignore
+    from app.database import AsyncSessionLocal
+
+    try:
+        state_payload = json.loads(decrypt(state))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+
+    tenant_id = state_payload["tenant_id"]
+    client_id = state_payload["client_id"]
+    client_secret = decrypt(state_payload["client_secret_enc"])
+    channel_name = state_payload.get("channel_name", "YouTube Channel")
+
+    redirect_uri = f"{app_settings.app_url}/api/v1/publish/youtube/oauth/callback"
+
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [redirect_uri],
+            }
+        },
+        scopes=YOUTUBE_SCOPES,
+        state=state,
+    )
+    flow.redirect_uri = redirect_uri
+
+    try:
+        flow.fetch_token(code=code)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {e}")
+
+    creds = flow.credentials
+    credentials_data = {
+        "access_token": creds.token,
+        "refresh_token": creds.refresh_token,
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }
+
+    from sqlalchemy import text as sa_text
+
+    async with AsyncSessionLocal() as db:
+        # Set RLS tenant context
+        await db.execute(sa_text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'"))
+        target = PublishTarget(
+            tenant_id=uuid.UUID(tenant_id),
+            platform="youtube",
+            name=channel_name,
+            credentials={"_encrypted": encrypt(json.dumps(credentials_data))},
+        )
+        db.add(target)
+        await db.commit()
+
+    # Redirect back to settings page with success indicator
+    return HTMLResponse(
+        content="""
+        <html><body>
+        <script>
+          if (window.opener) {
+            window.opener.postMessage({type:'youtube_oauth_success'}, '*');
+            window.close();
+          } else {
+            window.location.href = '/settings?tab=publishing&youtube=connected';
+          }
+        </script>
+        <p>YouTube connected! You can close this window.</p>
+        </body></html>
+        """
+    )

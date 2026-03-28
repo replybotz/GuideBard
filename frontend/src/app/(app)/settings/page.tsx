@@ -221,6 +221,10 @@ function PublishTargetsTab() {
   const [wpUser, setWpUser] = useState("");
   const [wpPass, setWpPass] = useState("");
   const [wpName, setWpName] = useState("");
+  const [ytClientId, setYtClientId] = useState("");
+  const [ytClientSecret, setYtClientSecret] = useState("");
+  const [ytChannelName, setYtChannelName] = useState("");
+  const [ytConnecting, setYtConnecting] = useState(false);
 
   const { data: targets = [] } = useQuery({ queryKey: ["publish-targets"], queryFn: () => api.get("/publish/targets").then((r) => r.data) });
 
@@ -296,15 +300,81 @@ function PublishTargetsTab() {
         </CardContent>
       </Card>
 
-      {/* YouTube note */}
+      {/* Add YouTube via OAuth */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">YouTube</CardTitle>
-          <CardDescription>Connect your YouTube channel via Google OAuth</CardDescription>
+          <CardTitle className="text-base">Connect YouTube Channel</CardTitle>
+          <CardDescription>
+            Requires a Google Cloud project with YouTube Data API v3 enabled.{" "}
+            <a
+              href="https://console.cloud.google.com/apis/credentials"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline"
+            >
+              Create OAuth credentials
+            </a>{" "}
+            (type: Web application, redirect URI:{" "}
+            <code className="text-xs bg-muted px-1 rounded">
+              {typeof window !== "undefined" ? window.location.origin : ""}/api/v1/publish/youtube/oauth/callback
+            </code>
+            )
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground mb-3">YouTube OAuth requires a Google Cloud project with the YouTube Data API v3 enabled. Once configured, the OAuth flow will appear here.</p>
-          <Button variant="outline" disabled>Connect YouTube (OAuth)</Button>
+        <CardContent className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Channel Display Name</Label>
+            <Input value={ytChannelName} onChange={(e) => setYtChannelName(e.target.value)} placeholder="My YouTube Channel" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>OAuth Client ID</Label>
+              <Input value={ytClientId} onChange={(e) => setYtClientId(e.target.value)} placeholder="xxxxxxx.apps.googleusercontent.com" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>OAuth Client Secret</Label>
+              <Input type="password" value={ytClientSecret} onChange={(e) => setYtClientSecret(e.target.value)} placeholder="GOCSPX-…" />
+            </div>
+          </div>
+          <Button
+            disabled={!ytClientId || !ytClientSecret || ytConnecting}
+            className="gap-2"
+            onClick={async () => {
+              setYtConnecting(true);
+              try {
+                const res = await api.post("/publish/youtube/oauth/start", {
+                  client_id: ytClientId,
+                  client_secret: ytClientSecret,
+                  channel_name: ytChannelName || "My YouTube Channel",
+                });
+                const popup = window.open(res.data.auth_url, "youtube_oauth", "width=600,height=700");
+                const handleMsg = (e: MessageEvent) => {
+                  if (e.data?.type === "youtube_oauth_success") {
+                    qc.invalidateQueries({ queryKey: ["publish-targets"] });
+                    toast({ title: "YouTube channel connected!" });
+                    setYtClientId(""); setYtClientSecret(""); setYtChannelName("");
+                    window.removeEventListener("message", handleMsg);
+                  }
+                };
+                window.addEventListener("message", handleMsg);
+                // Fallback: poll for popup close
+                const timer = setInterval(() => {
+                  if (popup?.closed) {
+                    clearInterval(timer);
+                    window.removeEventListener("message", handleMsg);
+                    qc.invalidateQueries({ queryKey: ["publish-targets"] });
+                    setYtConnecting(false);
+                  }
+                }, 1000);
+              } catch {
+                toast({ title: "Failed to start OAuth", variant: "destructive" });
+                setYtConnecting(false);
+              }
+            }}
+          >
+            {ytConnecting && <Loader2 className="h-4 w-4 animate-spin" />}
+            Connect via Google OAuth
+          </Button>
         </CardContent>
       </Card>
     </div>
