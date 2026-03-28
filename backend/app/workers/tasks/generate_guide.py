@@ -63,9 +63,18 @@ async def _generate_guide_async(recording_id, tenant_id, job_id, provider, model
         if not job:
             return
 
+        from app.utils.ws_notify import publish_job_progress
+
+        def _notify(status: str, pct: int, err: str | None = None):
+            try:
+                publish_job_progress(job_id, status, pct, err)
+            except Exception:
+                pass  # Never let notification failure break the task
+
         job.status = "running"
         job.progress = 10
         db.commit()
+        _notify("running", 10)
 
         try:
             # Load recording and screenshots
@@ -93,6 +102,7 @@ async def _generate_guide_async(recording_id, tenant_id, job_id, provider, model
 
             job.progress = 30
             db.commit()
+            _notify("running", 30)
 
             # Build prompt
             prompt = f"""Recording: "{recording.title or 'Screen Recording'}"
@@ -118,6 +128,7 @@ Please analyze these screenshots and generate a comprehensive step-by-step guide
             job.tokens_used = response.tokens_used
             job.model_name = response.model
             db.commit()
+            _notify("running", 70)
 
             # Parse JSON response
             text = response.text.strip()
@@ -165,6 +176,7 @@ Please analyze these screenshots and generate a comprehensive step-by-step guide
             job.entity_id = guide.id
             job.result_data = {"guide_id": str(guide.id)}
             db.commit()
+            _notify("completed", 100)
 
         except Exception as e:
             from datetime import datetime, timezone
@@ -172,4 +184,5 @@ Please analyze these screenshots and generate a comprehensive step-by-step guide
             job.error_message = str(e)
             job.completed_at = datetime.now(timezone.utc)
             db.commit()
+            _notify("failed", job.progress or 0, str(e))
             raise

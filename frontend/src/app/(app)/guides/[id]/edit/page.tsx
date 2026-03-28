@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState, useCallback } from "react";
 import { ArrowLeft, Plus, GripVertical, Trash2, Save, Eye } from "lucide-react";
 import Link from "next/link";
+import AnnotationCanvas, { Annotation } from "@/components/guide/AnnotationCanvas";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -102,11 +103,12 @@ export default function GuideEditorPage() {
   const saveAll = async () => {
     setSaving(true);
     try {
-      // Save current step content
+      // Save current step content + annotations
       if (activeStep && editor) {
         await api.put(`/guides/${id}/steps/${activeStep.id}`, {
           title: activeStep.title,
           content: editor.getText(),
+          annotations: activeStep.annotations ?? [],
         });
       }
       // Reorder
@@ -174,16 +176,25 @@ export default function GuideEditorPage() {
             <div className="min-h-[300px] border rounded-md p-4 prose prose-sm max-w-none">
               <EditorContent editor={editor} />
             </div>
-            {activeStep.screenshot_id && (
-              <div className="rounded-lg overflow-hidden border">
-                <img
-                  src={`/api/v1/storage/files/screenshots/${activeStep.screenshot_id}.png`}
-                  alt="Step screenshot"
-                  className="w-full"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-              </div>
-            )}
+            {/* Annotation canvas — shown whenever there's a screenshot; also usable without one */}
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Screenshot &amp; Annotations</p>
+              <AnnotationCanvas
+                screenshotUrl={
+                  activeStep.screenshot_id
+                    ? `/api/v1/storage/files/screenshots/${activeStep.screenshot_id}.png`
+                    : undefined
+                }
+                annotations={(activeStep.annotations as Annotation[]) ?? []}
+                onChange={(annotations) => {
+                  setSteps((prev) =>
+                    prev.map((s) =>
+                      s.id === activeStepId ? { ...s, annotations } : s
+                    )
+                  );
+                }}
+              />
+            </div>
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">

@@ -140,17 +140,19 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok", "app": settings.app_name}
 
-    # WebSocket: job progress
+    # WebSocket: job progress — subscribes to Redis pub/sub and relays events
     @app.websocket("/ws/jobs/{job_id}")
     async def ws_job_progress(websocket: WebSocket, job_id: str):
-        channel = f"job:{job_id}"
-        await manager.connect(channel, websocket)
+        from app.utils.ws_notify import subscribe_job_progress
+
+        await websocket.accept()
         try:
-            while True:
-                await asyncio.sleep(30)  # keepalive ping
-                await websocket.send_json({"type": "ping"})
+            async for raw in subscribe_job_progress(job_id):
+                await websocket.send_text(raw)
         except WebSocketDisconnect:
-            manager.disconnect(channel, websocket)
+            pass
+        except Exception:
+            pass
 
     # WebSocket: recording upload progress
     @app.websocket("/ws/recording/{recording_id}")

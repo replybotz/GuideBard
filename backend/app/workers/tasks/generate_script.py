@@ -54,9 +54,18 @@ async def _generate_script_async(recording_id, video_id, tenant_id, job_id, prov
         if not job:
             return
 
+        from app.utils.ws_notify import publish_job_progress
+
+        def _notify(status: str, pct: int, err: str | None = None):
+            try:
+                publish_job_progress(job_id, status, pct, err)
+            except Exception:
+                pass
+
         job.status = "running"
         job.progress = 10
         db.commit()
+        _notify("running", 10)
 
         try:
             recording = db.get(Recording, uuid.UUID(recording_id))
@@ -83,6 +92,7 @@ async def _generate_script_async(recording_id, video_id, tenant_id, job_id, prov
 
             job.progress = 30
             db.commit()
+            _notify("running", 30)
 
             extra = f"\n\nAdditional context: {prompt_hint}" if prompt_hint else ""
             prompt = f"""Tutorial: "{recording.title or 'Screen Recording'}"
@@ -113,6 +123,7 @@ Generate a voiceover narration script for this tutorial video."""
             job.completed_at = datetime.now(timezone.utc)
             job.result_data = {"video_id": video_id, "script_length": len(video.script_text)}
             db.commit()
+            _notify("completed", 100)
 
         except Exception as e:
             from datetime import datetime, timezone
@@ -120,4 +131,5 @@ Generate a voiceover narration script for this tutorial video."""
             job.error_message = str(e)
             job.completed_at = datetime.now(timezone.utc)
             db.commit()
+            _notify("failed", job.progress or 0, str(e))
             raise

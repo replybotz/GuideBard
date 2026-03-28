@@ -31,9 +31,18 @@ async def _generate_voice_async(video_id, tenant_id, job_id):
         if not job:
             return
 
+        from app.utils.ws_notify import publish_job_progress
+
+        def _notify(status: str, pct: int, err: str | None = None):
+            try:
+                publish_job_progress(job_id, status, pct, err)
+            except Exception:
+                pass
+
         job.status = "running"
         job.progress = 10
         db.commit()
+        _notify("running", 10)
 
         try:
             video = db.get(Video, uuid.UUID(video_id))
@@ -49,12 +58,14 @@ async def _generate_voice_async(video_id, tenant_id, job_id):
 
             job.progress = 20
             db.commit()
+            _notify("running", 20)
 
             # Synthesize audio
             audio_bytes = await synthesize_speech(video.script_text, profile, tenant_id, db)
 
             job.progress = 80
             db.commit()
+            _notify("running", 80)
 
             # Upload to MinIO
             storage = StorageService()
@@ -68,6 +79,7 @@ async def _generate_voice_async(video_id, tenant_id, job_id):
             job.completed_at = datetime.now(timezone.utc)
             job.result_data = {"audio_path": audio_key, "audio_size": len(audio_bytes)}
             db.commit()
+            _notify("completed", 100)
 
         except Exception as e:
             from datetime import datetime, timezone
@@ -75,4 +87,5 @@ async def _generate_voice_async(video_id, tenant_id, job_id):
             job.error_message = str(e)
             job.completed_at = datetime.now(timezone.utc)
             db.commit()
+            _notify("failed", job.progress or 0, str(e))
             raise

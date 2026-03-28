@@ -32,9 +32,18 @@ async def _compose_video_async(video_id, tenant_id, job_id):
         if not job:
             return
 
+        from app.utils.ws_notify import publish_job_progress
+
+        def _notify(status: str, pct: int, err: str | None = None):
+            try:
+                publish_job_progress(job_id, status, pct, err)
+            except Exception:
+                pass
+
         job.status = "running"
         job.progress = 5
         db.commit()
+        _notify("running", 5)
 
         temp_dir = f"/tmp/guidebard/video_{video_id}"
         os.makedirs(temp_dir, exist_ok=True)
@@ -61,12 +70,14 @@ async def _compose_video_async(video_id, tenant_id, job_id):
                 f.write(recording_bytes)
             job.progress = 25
             db.commit()
+            _notify("running", 25)
 
             audio_bytes = await storage.download_bytes("audio", video.audio_path)
             with open(audio_local, "wb") as f:
                 f.write(audio_bytes)
             job.progress = 40
             db.commit()
+            _notify("running", 40)
 
             # Run FFmpeg composition
             await compose_video(
@@ -82,6 +93,7 @@ async def _compose_video_async(video_id, tenant_id, job_id):
 
             job.progress = 80
             db.commit()
+            _notify("running", 80)
 
             # Get output metadata
             info = await get_video_info(output_local)
@@ -104,6 +116,7 @@ async def _compose_video_async(video_id, tenant_id, job_id):
             job.completed_at = datetime.now(timezone.utc)
             job.result_data = {"video_path": output_key, "duration_ms": info["duration_ms"]}
             db.commit()
+            _notify("completed", 100)
 
         except Exception as e:
             from datetime import datetime, timezone
@@ -113,6 +126,7 @@ async def _compose_video_async(video_id, tenant_id, job_id):
             if 'video' in dir() and video:
                 video.status = "failed"
             db.commit()
+            _notify("failed", job.progress or 0, str(e))
             raise
         finally:
             import shutil
