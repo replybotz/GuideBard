@@ -20,7 +20,7 @@ async def _generate_voice_async(video_id, tenant_id, job_id):
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as db:
-        db.execute(text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'"))
+        db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
 
         from app.models.ai_job import AIJob
         from app.models.video import Video

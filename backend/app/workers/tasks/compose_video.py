@@ -21,7 +21,7 @@ async def _compose_video_async(video_id, tenant_id, job_id):
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as db:
-        db.execute(text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'"))
+        db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
 
         from app.models.ai_job import AIJob
         from app.models.video import Video
@@ -47,6 +47,7 @@ async def _compose_video_async(video_id, tenant_id, job_id):
 
         temp_dir = f"/tmp/guidebard/video_{video_id}"
         os.makedirs(temp_dir, exist_ok=True)
+        video = None  # declared before try so the except block can reference it
 
         try:
             video = db.get(Video, uuid.UUID(video_id))
@@ -123,7 +124,7 @@ async def _compose_video_async(video_id, tenant_id, job_id):
             job.status = "failed"
             job.error_message = str(e)
             job.completed_at = datetime.now(timezone.utc)
-            if 'video' in dir() and video:
+            if video:
                 video.status = "failed"
             db.commit()
             _notify("failed", job.progress or 0, str(e))

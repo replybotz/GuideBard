@@ -102,6 +102,25 @@ export class ScreenRecorder {
     this.stream?.getTracks().forEach((t) => t.stop());
   }
 
+  /** Immediately capture a screenshot regardless of pixel-diff threshold. */
+  async captureNow(): Promise<void> {
+    const videoTrack = this.stream?.getVideoTracks()[0];
+    if (!videoTrack || videoTrack.readyState !== "live") return;
+    try {
+      const ic = new (window as any).ImageCapture(videoTrack);
+      const bitmap = await ic.grabFrame();
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
+      canvas.toBlob(async (blob) => {
+        if (blob) await this.opts.onScreenshot(blob, Date.now() - this.startTime);
+      }, "image/png");
+    } catch {
+      // ImageCapture not available in this browser
+    }
+  }
+
   getStream(): MediaStream | null {
     return this.stream;
   }

@@ -24,6 +24,7 @@ class RecordingStartRequest(BaseModel):
 
 class RecordingResponse(BaseModel):
     id: str
+    project_id: str | None
     title: str | None
     status: str
     duration_ms: int | None
@@ -249,6 +250,7 @@ async def delete_recording(
 def _to_response(r: Recording) -> RecordingResponse:
     return RecordingResponse(
         id=str(r.id),
+        project_id=str(r.project_id) if r.project_id else None,
         title=r.title,
         status=r.status,
         duration_ms=r.duration_ms,

@@ -1,7 +1,7 @@
 "use client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Save, Mic, Film, Loader2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,11 +24,19 @@ export default function VideoEditorPage() {
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [jobProgress, setJobProgress] = useState(0);
 
+  const scriptInitialized = useRef(false);
   const { data: video } = useQuery({
     queryKey: ["video", id],
     queryFn: () => api.get(`/videos/${id}`).then((r) => r.data),
-    onSuccess: (data) => { if (!script && data.script_text) setScript(data.script_text); },
   });
+
+  // React Query v5 removed onSuccess from useQuery; seed script once on first load
+  useEffect(() => {
+    if (video?.script_text && !scriptInitialized.current) {
+      setScript(video.script_text);
+      scriptInitialized.current = true;
+    }
+  }, [video?.script_text]);
 
   const { data: voices = [] } = useQuery({
     queryKey: ["voice-profiles"],

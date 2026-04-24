@@ -25,7 +25,7 @@ async def _publish_youtube_async(job_id, tenant_id):
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as db:
-        db.execute(text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'"))
+        db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
 
         from app.models.publish_job import PublishJob
         from app.models.publish_target import PublishTarget
@@ -90,7 +90,7 @@ async def _publish_wordpress_async(job_id, tenant_id):
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as db:
-        db.execute(text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'"))
+        db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
 
         from app.models.publish_job import PublishJob
         from app.models.publish_target import PublishTarget

@@ -336,8 +336,8 @@ async def youtube_oauth_callback(
     from sqlalchemy import text as sa_text
 
     async with AsyncSessionLocal() as db:
-        # Set RLS tenant context
-        await db.execute(sa_text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'"))
+        # Set RLS tenant context (parameterized to avoid string interpolation)
+        await db.execute(sa_text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
         target = PublishTarget(
             tenant_id=uuid.UUID(tenant_id),
             platform="youtube",

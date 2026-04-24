@@ -25,7 +25,7 @@ async def _process_recording_async(recording_id: str, tenant_id: str):
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as db:
-        db.execute(text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'"))
+        db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
 
         from app.models.recording import Recording
         recording = db.get(Recording, recording_id)

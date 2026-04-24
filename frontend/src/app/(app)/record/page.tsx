@@ -121,8 +121,8 @@ export default function RecordPage() {
   const handleStop = () => recorderRef.current?.stop();
   const handlePause = () => recorderRef.current?.pause();
   const handleResume = () => recorderRef.current?.resume();
-  const handleManualScreenshot = () => {
-    // Trigger a manual screenshot capture via the recorder stream
+  const handleManualScreenshot = async () => {
+    await recorderRef.current?.captureNow();
     toast({ title: "Screenshot captured" });
   };
 
@@ -137,7 +137,16 @@ export default function RecordPage() {
           <p className="text-muted-foreground mt-1">Your guide and video are being generated in the background.</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" onClick={() => { setPhase("idle"); setStatus("idle"); setElapsed(0); }}>
+          <Button variant="outline" onClick={() => {
+            setPhase("idle");
+            setStatus("idle");
+            setElapsed(0);
+            setRecordingId(null);
+            setChunksSent(0);
+            setChunksTotal(0);
+            setUploadProgress(0);
+            recorderRef.current = null;
+          }}>
             Record another
           </Button>
           <Button onClick={() => router.push("/guides")}>View guides</Button>

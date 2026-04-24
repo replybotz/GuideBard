@@ -19,6 +19,18 @@ interface AuthState {
   fetchMe: () => Promise<void>;
 }
 
+// Next.js middleware runs on the Edge and can only read cookies, not localStorage.
+// We set a lightweight session cookie alongside localStorage so the middleware can
+// gate protected routes. The cookie carries no sensitive data — the real token
+// lives in localStorage and is attached to API requests via the Axios interceptor.
+function setAuthCookie(value: string) {
+  document.cookie = `access_token=${value}; path=/; SameSite=Lax`;
+}
+
+function clearAuthCookie() {
+  document.cookie = "access_token=; path=/; max-age=0; SameSite=Lax";
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
@@ -28,25 +40,38 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (username, password) => {
         set({ isLoading: true });
-        const res = await api.post("/auth/login", { username, password });
-        localStorage.setItem("access_token", res.data.access_token);
-        localStorage.setItem("refresh_token", res.data.refresh_token);
-        const meRes = await api.get("/auth/me");
-        set({ user: meRes.data, isAuthenticated: true, isLoading: false });
+        try {
+          const res = await api.post("/auth/login", { username, password });
+          localStorage.setItem("access_token", res.data.access_token);
+          localStorage.setItem("refresh_token", res.data.refresh_token);
+          setAuthCookie(res.data.access_token);
+          const meRes = await api.get("/auth/me");
+          set({ user: meRes.data, isAuthenticated: true, isLoading: false });
+        } catch (err) {
+          set({ isLoading: false });
+          throw err;
+        }
       },
 
       register: async (username, email, password) => {
         set({ isLoading: true });
-        const res = await api.post("/auth/register", { username, email, password });
-        localStorage.setItem("access_token", res.data.access_token);
-        localStorage.setItem("refresh_token", res.data.refresh_token);
-        const meRes = await api.get("/auth/me");
-        set({ user: meRes.data, isAuthenticated: true, isLoading: false });
+        try {
+          const res = await api.post("/auth/register", { username, email, password });
+          localStorage.setItem("access_token", res.data.access_token);
+          localStorage.setItem("refresh_token", res.data.refresh_token);
+          setAuthCookie(res.data.access_token);
+          const meRes = await api.get("/auth/me");
+          set({ user: meRes.data, isAuthenticated: true, isLoading: false });
+        } catch (err) {
+          set({ isLoading: false });
+          throw err;
+        }
       },
 
       logout: () => {
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
+        clearAuthCookie();
         set({ user: null, isAuthenticated: false });
         window.location.href = "/login";
       },

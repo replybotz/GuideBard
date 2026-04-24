@@ -1,7 +1,7 @@
 "use client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { ArrowLeft, Plus, GripVertical, Trash2, Save, Eye } from "lucide-react";
 import Link from "next/link";
 import AnnotationCanvas, { Annotation } from "@/components/guide/AnnotationCanvas";
@@ -45,11 +45,16 @@ export default function GuideEditorPage() {
   const { data: guide } = useQuery({
     queryKey: ["guide", id],
     queryFn: () => api.get(`/guides/${id}`).then((r) => r.data),
-    onSuccess: (data) => {
-      setSteps(data.steps ?? []);
-      if (data.steps?.length && !activeStepId) setActiveStepId(data.steps[0].id);
-    },
   });
+
+  // React Query v5 removed onSuccess from useQuery; use useEffect instead
+  useEffect(() => {
+    if (guide?.steps) {
+      setSteps(guide.steps);
+      if (guide.steps.length && !activeStepId) setActiveStepId(guide.steps[0].id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guide?.id]);
 
   const activeStep = steps.find((s) => s.id === activeStepId);
 

@@ -49,7 +49,7 @@ async def _generate_guide_async(recording_id, tenant_id, job_id, provider, model
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as db:
-        db.execute(text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'"))
+        db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
 
         from app.models.ai_job import AIJob
         from app.models.recording import Recording
@@ -130,14 +130,18 @@ Please analyze these screenshots and generate a comprehensive step-by-step guide
             db.commit()
             _notify("running", 70)
 
-            # Parse JSON response
-            text = response.text.strip()
-            # Strip markdown code block if present
-            if text.startswith("```"):
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-            guide_data = json.loads(text)
+            # Parse JSON response — AI may wrap it in a markdown code block
+            raw = response.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            try:
+                guide_data = json.loads(raw)
+            except json.JSONDecodeError as parse_err:
+                raise ValueError(
+                    f"AI returned invalid JSON: {parse_err}. Response was: {raw[:500]}"
+                ) from parse_err
 
             # Create Guide
             guide = Guide(
